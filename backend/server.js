@@ -24,9 +24,28 @@ const redisClient = createClient({
 
 redisClient.on("error", (err) => console.error("Redis Client Error", err));
 
+async function initializeDatabase() {
+  console.log("Checking database tables...");
+
+  const createTableQuery = `
+    CREATE TABLE IF NOT EXISTS events (
+      id SERIAL PRIMARY KEY,
+      title VARCHAR(255) NOT NULL,
+      description TEXT,
+      date DATE NOT NULL
+    );
+  `;
+
+  await pool.query(createTableQuery);
+  console.log('Table "events" verified/created');
+}
+
 async function startServer() {
   await redisClient.connect();
   console.log("Connected to Redis");
+
+  await initializeDatabase();
+
   app.listen(port, () => console.log(`Backend running on port ${port}`));
 }
 
