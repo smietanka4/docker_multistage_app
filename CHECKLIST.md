@@ -4,19 +4,41 @@
 
 Aplikacja to system typu "kalendarz wydarzeń". Frontend serwuje chronologiczną listę bloczków, a backend zapisuje je w bazie danych. Ruch kontrolowany jest przez reverse proxy.
 
-```mermaid
-flowchart TD
-    User([Użytkownik]) -->|HTTP :80| Nginx[Nginx Reverse Proxy]
-    
-    subgraph Frontend
-        Nginx -->|/| React[React.js UI]
-    end
-    
-    subgraph Backend
-        Nginx -->|/api/*| Node[Node.js API]
-        Node --> DB[(PostgreSQL)]
-        Node --> Cache[(Redis Cache)]
-    end
+```text
+                    [ Użytkownik ]
+                          |
+                          | HTTP (Port 80)
+                          v
+                +-------------------+
+                |   nginx-proxy     |
+                | (Reverse Proxy &  |
+                |  Load Balancer)   |
+                +-------------------+
+                  /               \
+         (Statyczny UI)         (Zapytania API)
+           Ścieżka: /           Ścieżka: /api/*
+               /                     \
+              v                       v
+      +--------------+        +---------------+
+      |   frontend   |        |   backend 1   |
+      |   (React)    |   +--->|   (Node.js)   |
+      +--------------+   |    +---------------+
+                         |           |
+                      (Round         | (Czyta/Zapisuje)
+                      Robin)         |
+                         |           v
+                         |    +---------------+
+                         +--->|   backend 2   |
+                              |   (Node.js)   |
+                              +---------------+
+                                     |
+                          +----------+----------+
+                          |                     |
+                          v                     v
+                  +---------------+     +---------------+
+                  |  postgres-db  |     |  redis-cache  |
+                  | (Baza Danych) |     | (Pamięć Cache)|
+                  +---------------+     +---------------+
 ```
 
 ### Lista usług i wystawionych portów
@@ -70,7 +92,50 @@ curl -i http://localhost/api/events
 - Przy **pierwszym** wywołaniu aplikacja sięga do bazy danych i zwraca w odpowiedziach nagłówek `X-Cache: MISS`.
 - Przy **drugim**, błyskawicznym wywołaniu odczyt obsługiwany jest z pamięci Redisa, a serwer wyraźnie odsyła `X-Cache: HIT`. Odpowiedź JSON zawiera przed chwilą dodany egzamin.
 
-## 4. Wymagania dodatkowe (Zrealizowane w 100%)
+## 4. Komendy administracyjne do weryfikacji architektury (CLI)
+
+Poniższe komendy potwierdzają hermetyczność sieci, polityki zasobów oraz bezpieczeństwo kontenerów z poziomu demona Dockera.
+
+**a) Udowodnienie izolacji sieciowej (Ping)**
+Nginx nie ma dostępu do bazy danych, ponieważ znajdują się w innych wirtualnych sieciach:
+```bash
+docker exec nginx-proxy ping -c 2 postgres-db
+```
+*(Oczekiwany wynik: Błąd `bad address` lub `Name or service not known`)*
+
+Jednakże backend ma poprawne połączenie z bazą:
+```bash
+docker exec backend1 ping -c 2 postgres-db
+```
+*(Oczekiwany wynik: Sukces w przesyłaniu pakietów)*
+
+**b) Udowodnienie zrzucenia uprawnień roota (Bezpieczeństwo)**
+```bash
+docker exec backend1 whoami
+```
+*(Oczekiwany wynik: `node` zamiast `root`)*
+
+**c) Odczyt hasła z Docker Secrets (zamiast ENV)**
+*(Uwaga dla Git Bash na Windowsie: podwójny slash `//` na początku ścieżki zapobiega automatycznemu doklejaniu litery dysku np. C:/Program Files/...)*
+```bash
+docker exec backend1 cat //run/secrets/db_password
+```
+*(Oczekiwany wynik: system zwraca poprawne hasło bezpośrednio ze wstrzykniętego do pamięci pliku)*
+
+**d) Weryfikacja działania limitów pamięci RAM**
+```bash
+docker stats --no-stream
+```
+*(Oczekiwany wynik: W konsoli w kolumnie `LIMIT` widać wartości narzucone z docker-compose.yml, np. 512MiB dla backendu)*
+
+**e) Weryfikacja przetrwania danych na nazwanym wolumenie**
+Po wykonaniu `docker compose down` oraz `docker compose up -d`, wolumen można wylistować (tu komenda dla Windows PowerShell/CMD):
+```bash
+docker volume ls | findstr postgres-data
+```
+*(Oczekiwany wynik: Wolumen wciąż istnieje, a aplikacja w przeglądarce posiada stare dane)*
+
+## 5. Wymagania dodatkowe (Zrealizowane w 100%)
 
 Wszystkie cztery ekstra-opcje rozszerzające aplikację wieloserwisową zostały wdrożone w systemie:
 1. **Limity zasobów zdefiniowane w pliku `docker-compose.yml`:** Ustawiono sekcję `deploy: resources: limits` zabezpieczając RAM i CPU dla każdego z kontenerów (chroni hosta przed np. przeładowaniem pamięci bazy).
