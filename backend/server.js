@@ -10,10 +10,19 @@ app.use(express.json());
 
 const port = process.env.PORT || 3001;
 
+const getSecretOrEnv = (secretName, envName) => {
+  const secretPath = `/run/secrets/${secretName}`;
+  const fs = require("fs");
+  if (fs.existsSync(secretPath)) {
+    return fs.readFileSync(secretPath, "utf8").trim();
+  }
+  return process.env[envName];
+};
+
 const pool = new Pool({
   host: process.env.DB_HOST,
-  user: process.env.DB_USER,
-  password: process.env.DB_PASSWORD,
+  user: getSecretOrEnv("db_user", "DB_USER"),
+  password: getSecretOrEnv("db_password", "DB_PASSWORD"),
   database: process.env.DB_NAME,
   port: process.env.DB_PORT,
 });

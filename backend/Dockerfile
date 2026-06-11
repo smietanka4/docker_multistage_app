@@ -11,6 +11,8 @@ WORKDIR /app
 COPY --from=builder /app/node_modules ./node_modules
 COPY . .
 
+RUN apk add --no-cache curl
+
 # ustawienie użytkownika non-root
 USER node
 
