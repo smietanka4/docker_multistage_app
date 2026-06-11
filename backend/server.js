@@ -43,20 +43,36 @@ redisClient.on("error", (err) => console.error("Redis Client Error", err));
 async function initializeDatabase() {
   console.log("Checking database tables...");
 
-  const createTableQuery = `
-    CREATE TABLE IF NOT EXISTS events (
-      id SERIAL PRIMARY KEY,
-      title VARCHAR(255) NOT NULL,
-      description TEXT,
-      date TIMESTAMP NOT NULL
-    );
-  `;
-
-  await pool.query(createTableQuery);
+  const client = await pool.connect();
   try {
-    await pool.query("ALTER TABLE events ALTER COLUMN date TYPE TIMESTAMP USING date::TIMESTAMP;");
-  } catch(e) {}
-  console.log('Table "events" verified/created');
+    await client.query("SELECT pg_advisory_lock(123456789);");
+
+    const createTableQuery = `
+      CREATE TABLE IF NOT EXISTS events (
+        id SERIAL PRIMARY KEY,
+        title VARCHAR(255) NOT NULL,
+        description TEXT,
+        date TIMESTAMP NOT NULL
+      );
+    `;
+
+    await client.query(createTableQuery);
+
+    try {
+      await client.query(
+        "ALTER TABLE events ALTER COLUMN date TYPE TIMESTAMP USING date::TIMESTAMP;",
+      );
+    } catch (e) {
+      if (e.code !== "42710" && e.code !== "42P07") {
+        throw e;
+      }
+    }
+
+    console.log('Table "events" verified/created');
+  } finally {
+    await client.query("SELECT pg_advisory_unlock(123456789);");
+    client.release();
+  }
 }
 
 async function startServer() {
@@ -81,7 +97,7 @@ app.get("/stats", async (req, res) => {
     res.json({
       totalEvents,
       backendInstanceId,
-      totalRequests
+      totalRequests,
     });
   } catch (err) {
     console.error("Stats Error:", err);
