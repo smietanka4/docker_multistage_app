@@ -2,11 +2,18 @@ const express = require("express");
 const { Pool } = require("pg");
 const { createClient } = require("redis");
 const cors = require("cors");
+const os = require("os");
 require("dotenv").config();
 
 const app = express();
 app.use(cors());
 app.use(express.json());
+
+let totalRequests = 0;
+app.use((req, res, next) => {
+  totalRequests++;
+  next();
+});
 
 const port = process.env.PORT || 3001;
 
@@ -41,11 +48,14 @@ async function initializeDatabase() {
       id SERIAL PRIMARY KEY,
       title VARCHAR(255) NOT NULL,
       description TEXT,
-      date DATE NOT NULL
+      date TIMESTAMP NOT NULL
     );
   `;
 
   await pool.query(createTableQuery);
+  try {
+    await pool.query("ALTER TABLE events ALTER COLUMN date TYPE TIMESTAMP USING date::TIMESTAMP;");
+  } catch(e) {}
   console.log('Table "events" verified/created');
 }
 
@@ -60,6 +70,23 @@ async function startServer() {
 
 app.get("/health", (req, res) => {
   res.status(200).json({ status: "UP" });
+});
+
+app.get("/stats", async (req, res) => {
+  try {
+    const result = await pool.query("SELECT COUNT(*) FROM events");
+    const totalEvents = parseInt(result.rows[0].count, 10);
+    const backendInstanceId = os.hostname();
+
+    res.json({
+      totalEvents,
+      backendInstanceId,
+      totalRequests
+    });
+  } catch (err) {
+    console.error("Stats Error:", err);
+    res.status(500).json({ error: "Stats query failed" });
+  }
 });
 
 app.get("/events", async (req, res) => {

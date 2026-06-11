@@ -13,6 +13,7 @@ networks:
 
 services:
   nginx-proxy:
+    container_name: nginx-proxy
     build: ./nginx-proxy
     ports:
       - "80:80"
@@ -22,6 +23,8 @@ services:
       frontend:
         condition: service_started
       backend:
+        condition: service_healthy
+      backend2:
         condition: service_healthy
     deploy:
       resources:
@@ -35,6 +38,7 @@ services:
         max-file: "3"
 
   frontend:
+    container_name: frontend
     build:
       context: ./frontend
       dockerfile: Dockerfile
@@ -52,6 +56,7 @@ services:
         max-file: "3"
 
   backend:
+    container_name: backend1
     build:
       context: ./backend
       dockerfile: Dockerfile
@@ -91,7 +96,49 @@ services:
         max-file: "3"
     stop_grace_period: 20s
 
+  backend2:
+    container_name: backend2
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    image: my-app-backend:${APP_VERSION:-latest}
+    environment:
+      PORT: 3002
+      DB_HOST: ${DB_HOST}
+      DB_PORT: ${DB_PORT}
+      DB_NAME: ${DB_NAME}
+      REDIS_HOST: ${REDIS_HOST}
+      REDIS_PORT: ${REDIS_PORT}
+    secrets:
+      - db_user
+      - db_password
+    networks:
+      - frontend_net
+      - backend_net
+    depends_on:
+      postgres-db:
+        condition: service_healthy
+      redis-cache:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3002/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 512M
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    stop_grace_period: 20s
+
   postgres-db:
+    container_name: postgres-db
     image: postgres:16-alpine
     environment:
       POSTGRES_USER_FILE: /run/secrets/db_user
@@ -122,6 +169,7 @@ services:
         max-file: "3"
 
   redis-cache:
+    container_name: redis-cache
     image: redis:7-alpine
     networks:
       - backend_net
@@ -142,12 +190,14 @@ services:
         max-file: "3"
 
   pgadmin:
+    container_name: pgadmin
     image: dpage/pgadmin4:latest
     profiles: ["debug"]
     environment:
       PGADMIN_DEFAULT_EMAIL: admin@admin.com
       PGADMIN_DEFAULT_PASSWORD: admin
     networks:
+      - frontend_net
       - backend_net
     ports:
       - "5050:80"
