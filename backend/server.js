@@ -3,6 +3,8 @@ const { Pool } = require("pg");
 const { createClient } = require("redis");
 const cors = require("cors");
 const os = require("os");
+const jwt = require("jsonwebtoken");
+const jwksClient = require("jwks-rsa");
 require("dotenv").config();
 
 const app = express();
@@ -58,6 +60,22 @@ async function initializeDatabase() {
 
     await client.query(createTableQuery);
 
+    const createUsersQuery = `
+      CREATE TABLE IF NOT EXISTS users (
+        id UUID PRIMARY KEY,
+        username varchar(255) NOT NULL UNIQUE,
+        email varchar(255),
+        role varchar(50) NOT NULL DEFAULT 'user',
+        created_at TIMESTAMP DEFAULT NOW()
+        );
+      `;
+
+    await client.query(createUsersQuery);
+
+    const constraintRoles = `ALTER TABLE events ADD COLUMN created_by UUID REFERENCES users(id);`
+
+    await client.query(constraintRoles);
+
     try {
       await client.query(
         "ALTER TABLE events ALTER COLUMN date TYPE TIMESTAMP USING date::TIMESTAMP;",
@@ -75,6 +93,50 @@ async function initializeDatabase() {
   }
 }
 
+const jwksClient = jwksClient({
+  jwksUri: `https://${process.env.KEYCLOAK_HOST}/realms/${process.env.KEYCLOAK_REALM}/protocol/openid-connect/certs`,
+  cache: true,
+  rateLimit: true,
+});
+
+function getKey(header, callback) {
+  client.getSigningKey(header.kid, (err, key) => {
+    if (err) {
+      return callback(err);
+    }
+    const signingKey = key.publicKey || key.rsaPublicKey;
+    callback(null, signingKey);
+  });
+}
+
+const checkJwt = (req, res, next) => {
+  const authHeader = req.headers.authorization;
+  if (!authHeader || !authHeader.startsWith("Bearer ")) {
+    return res.status(401).json({ error: "Missing or invalid Authorization header" });
+  }
+
+  const token = authHeader.split(" ")[1];
+
+  jwt.verify(token, getKey, { algorithms: ["RS256"] }, (err, decoded) => {
+    if (err) {
+      console.error("JWT verification error:", err);
+      return res.status(401).json({ error: "Invalid token" });
+    }
+    req.user = decoded;
+    next();
+  });
+} 
+
+const checkRole = (role) => {
+  return (req, res, next) => {
+    const roles = req.user?.realm_access?.roles || [];
+    if (!roles.includes(role)) {
+      return res.status(403).json({ error: "Forbidden: insufficient role" });
+    }
+    next();
+  }; 
+}
+
 async function startServer() {
   await redisClient.connect();
   console.log("Connected to Redis");
@@ -88,7 +150,7 @@ app.get("/health", (req, res) => {
   res.status(200).json({ status: "UP" });
 });
 
-app.get("/stats", async (req, res) => {
+app.get("/stats", checkJwt, async (req, res) => {
   try {
     const result = await pool.query("SELECT COUNT(*) FROM events");
     const totalEvents = parseInt(result.rows[0].count, 10);
@@ -105,7 +167,7 @@ app.get("/stats", async (req, res) => {
   }
 });
 
-app.get("/events", async (req, res) => {
+app.get("/events",checkJwt, async (req, res) => {
   const cacheKey = "events_list";
 
   try {
@@ -128,7 +190,7 @@ app.get("/events", async (req, res) => {
   }
 });
 
-app.post("/events", async (req, res) => {
+app.post("/events", checkJwt, async (req, res) => {
   const { title, description, date } = req.body;
   try {
     await pool.query(
