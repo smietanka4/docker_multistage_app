@@ -1,10 +1,12 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useContext } from "react";
+import { AuthContext } from "../context/AuthContext";
 
 const API_URL = "/api";
 
 export default function Events() {
   const [events, setEvents] = useState([]);
   const [loading, setLoading] = useState(true);
+  const { token, user } = useContext(AuthContext);
   
   // form state
   const [title, setTitle] = useState("");
@@ -18,7 +20,11 @@ export default function Events() {
 
   const fetchEvents = async () => {
     try {
-      const response = await fetch(`${API_URL}/events`);
+      const response = await fetch(`${API_URL}/events`, {
+        headers: {
+          "Authorization": `Bearer ${token}`
+        }
+      });
 
       if (!response.ok) {
         throw new Error(`Błąd HTTP! status: ${response.status}`);
@@ -42,7 +48,10 @@ export default function Events() {
     try {
       const response = await fetch(`${API_URL}/events`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { 
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${token}`
+        },
         body: JSON.stringify({ title, description, date })
       });
       if (response.ok) {
@@ -55,6 +64,25 @@ export default function Events() {
       console.error(err);
     }
     setIsSubmitting(false);
+  };
+
+  const handleDelete = async (id) => {
+    if (!window.confirm("Na pewno usunąć?")) return;
+    try {
+      const response = await fetch(`${API_URL}/events/${id}`, {
+        method: "DELETE",
+        headers: { "Authorization": `Bearer ${token}` }
+      });
+      if (response.ok) {
+        await fetchEvents();
+      } else {
+        const errorData = await response.json();
+        alert(`Błąd usuwania: ${errorData.error}`);
+      }
+    } catch (err) {
+      console.error(err);
+      alert("Wystąpił błąd sieci");
+    }
   };
 
   if (loading) return <div className="loading">Loading events...</div>;
@@ -107,6 +135,14 @@ export default function Events() {
               <div className="event-content">
                 <h3>{event.title}</h3>
                 <p>{event.description}</p>
+                {user?.roles?.includes("admin") && (
+                  <button 
+                    onClick={() => handleDelete(event.id)}
+                    style={{ marginTop: "15px", background: "#ef4444", color: "white", border: "none", padding: "8px 16px", borderRadius: "8px", cursor: "pointer" }}
+                  >
+                    🗑 Usuń (Tylko Admin)
+                  </button>
+                )}
               </div>
             </div>
           ))

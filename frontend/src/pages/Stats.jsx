@@ -1,10 +1,12 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useContext } from 'react';
+import { AuthContext } from "../context/AuthContext";
 
 const API_URL = "/api";
 
 export default function Stats() {
   const [stats, setStats] = useState(null);
   const [loading, setLoading] = useState(true);
+  const { token } = useContext(AuthContext);
 
   useEffect(() => {
     fetchStats();
@@ -13,7 +15,9 @@ export default function Stats() {
   const fetchStats = async () => {
     setLoading(true);
     try {
-      const response = await fetch(`${API_URL}/stats`);
+      const response = await fetch(`${API_URL}/stats`, {
+        headers: { "Authorization": `Bearer ${token}` }
+      });
       if (!response.ok) throw new Error("Błąd podczas pobierania statystyk");
       const data = await response.json();
       setStats(data);

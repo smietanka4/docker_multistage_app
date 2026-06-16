@@ -72,9 +72,14 @@ async function initializeDatabase() {
 
     await client.query(createUsersQuery);
 
-    const constraintRoles = `ALTER TABLE events ADD COLUMN created_by UUID REFERENCES users(id);`
-
-    await client.query(constraintRoles);
+    try {
+      const constraintRoles = `ALTER TABLE events ADD COLUMN created_by UUID REFERENCES users(id);`;
+      await client.query(constraintRoles);
+    } catch (e) {
+      if (e.code !== "42701") {
+        throw e;
+      }
+    }
 
     try {
       await client.query(
@@ -93,8 +98,8 @@ async function initializeDatabase() {
   }
 }
 
-const jwksClient = jwksClient({
-  jwksUri: `https://${process.env.KEYCLOAK_HOST}/realms/${process.env.KEYCLOAK_REALM}/protocol/openid-connect/certs`,
+const client = jwksClient({
+  jwksUri: `http://${process.env.KEYCLOAK_HOST}/realms/${process.env.KEYCLOAK_REALM}/protocol/openid-connect/certs`,
   cache: true,
   rateLimit: true,
 });
@@ -112,7 +117,9 @@ function getKey(header, callback) {
 const checkJwt = (req, res, next) => {
   const authHeader = req.headers.authorization;
   if (!authHeader || !authHeader.startsWith("Bearer ")) {
-    return res.status(401).json({ error: "Missing or invalid Authorization header" });
+    return res
+      .status(401)
+      .json({ error: "Missing or invalid Authorization header" });
   }
 
   const token = authHeader.split(" ")[1];
@@ -125,17 +132,24 @@ const checkJwt = (req, res, next) => {
     req.user = decoded;
     next();
   });
-} 
+};
 
-const checkRole = (role) => {
+const checkRole = (...requiredRoles) => {
   return (req, res, next) => {
-    const roles = req.user?.realm_access?.roles || [];
-    if (!roles.includes(role)) {
-      return res.status(403).json({ error: "Forbidden: insufficient role" });
+    const userRoles = req.user?.realm_access?.roles || [];
+    const hasRole = requiredRoles.some((role) => userRoles.includes(role));
+
+    if (!hasRole) {
+      return res.status(403).json({
+        error: "Forbidden: insufficient role",
+        required: requiredRoles,
+        actual: userRoles,
+      });
     }
+
     next();
-  }; 
-}
+  };
+};
 
 async function startServer() {
   await redisClient.connect();
@@ -167,7 +181,7 @@ app.get("/stats", checkJwt, async (req, res) => {
   }
 });
 
-app.get("/events",checkJwt, async (req, res) => {
+app.get("/events", checkJwt, async (req, res) => {
   const cacheKey = "events_list";
 
   try {
@@ -206,19 +220,74 @@ app.post("/events", checkJwt, async (req, res) => {
   }
 });
 
-startServer().catch(console.error);
+app.put("/events/:id", checkJwt, checkRole("admin"), async (req, res) => {
+  const { id } = req.params;
+  const { title, description, date } = req.body;
+  try {
+    const result = await pool.query(
+      "UPDATE events SET title=$1, description=$2, date=$3 WHERE id=$4 RETURNING *",
+      [title, description, date, id],
+    );
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: "Event not found" });
+    }
+    await redisClient.del("events_list");
+    res.json({ message: "Event updated", event: result.rows[0] });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Database error" });
+  }
+});
 
-const gracefulShutdown = async (signal) => {
-  console.log(`\n${signal} received. Starting graceful shutdown...`);
+app.delete("/events/:id", checkJwt, checkRole("admin"), async (req, res) => {
+  const { id } = req.params;
+  try {
+    const result = await pool.query(
+      "DELETE FROM events WHERE id=$1 RETURNING id",
+      [id],
+    );
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: "Event not found" });
+    }
+    await redisClient.del("events_list");
+    res.json({ message: "Event deleted" });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Database error" });
+  }
+});
 
-  await pool.end();
-  console.log("Postgress pool closed");
+app.get(
+  "/api/user/profile",
+  checkJwt,
+  checkRole("user", "admin"),
+  async (req, res) => {
+    res.json({
+      userId: req.user.sub,
+      username: req.user.preferred_username,
+      email: req.user.email,
+      roles: req.user.realm_access?.rolse || [],
+    });
+  },
+);
 
-  await redisClient.quit();
-  console.log("Redis client disconnected");
+if (require.main === module) {
+  startServer().catch(console.error);
 
-  process.exit(0);
-};
+  const gracefulShutdown = async (signal) => {
+    console.log(`\n${signal} received. Starting graceful shutdown...`);
 
-process.on("SIGTERM", () => gracefulShutdown("SIGTERM"));
-process.on("SIGINT", () => gracefulShutdown("SIGINT"));
+    await pool.end();
+    console.log("Postgress pool closed");
+
+    await redisClient.quit();
+    console.log("Redis client disconnected");
+
+    process.exit(0);
+  };
+
+  process.on("SIGTERM", () => gracefulShutdown("SIGTERM"));
+  process.on("SIGINT", () => gracefulShutdown("SIGINT"));
+}
+
+module.exports = app;
