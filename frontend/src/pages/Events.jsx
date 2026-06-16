@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useContext } from "react";
+import { useState, useEffect, useContext } from "react";
 import { AuthContext } from "../context/AuthContext";
 
 const API_URL = "/api";
@@ -18,7 +18,7 @@ export default function Events() {
     fetchEvents();
   }, []);
 
-  const fetchEvents = async () => {
+  async function fetchEvents() {
     try {
       const response = await fetch(`${API_URL}/events`, {
         headers: {

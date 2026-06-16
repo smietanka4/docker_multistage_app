@@ -1,5 +1,5 @@
-import React, { useContext } from "react";
-import { BrowserRouter, Routes, Route, useNavigate, Link } from "react-router-dom";
+import { useContext } from "react";
+import { BrowserRouter, Routes, Route, Link } from "react-router-dom";
 import { AuthContext, AuthProvider } from "./context/AuthContext";
 import { ProtectedRoute } from "./components/ProtectedRoute";
 import { Login } from "./pages/Login";

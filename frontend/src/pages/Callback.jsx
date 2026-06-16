@@ -1,11 +1,10 @@
-import React, { useEffect, useContext } from "react";
+import { useEffect } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
-import { AuthContext } from "../context/AuthContext";
+
 
 export function Callback() {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
-  const { setToken } = useContext(AuthContext);
   const code = searchParams.get("code");
 
   useEffect(() => {

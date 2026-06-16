@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useContext } from 'react';
+import { useState, useEffect, useContext } from 'react';
 import { AuthContext } from "../context/AuthContext";
 
 const API_URL = "/api";
@@ -12,7 +12,7 @@ export default function Stats() {
     fetchStats();
   }, []);
 
-  const fetchStats = async () => {
+  async function fetchStats() {
     setLoading(true);
     try {
       const response = await fetch(`${API_URL}/stats`, {

@@ -1,5 +1,6 @@
-import React, { createContext, useState, useEffect } from "react";
+import { createContext, useState, useEffect } from "react";
 
+// eslint-disable-next-line react-refresh/only-export-components
 export const AuthContext = createContext();
 
 export function AuthProvider({ children }) {
@@ -10,6 +11,7 @@ export function AuthProvider({ children }) {
   useEffect(() => {
     const savedToken = localStorage.getItem("access_token");
     if (savedToken) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setToken(savedToken);
       try {
         const payload = JSON.parse(atob(savedToken.split(".")[1]));
@@ -19,7 +21,7 @@ export function AuthProvider({ children }) {
           email: payload.email,
           roles: payload.realm_access?.roles || [],
         });
-      } catch (err) {
+      } catch {
         console.error("Invalid token");
         localStorage.removeItem("access_token");
       }
