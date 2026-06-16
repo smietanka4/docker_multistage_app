@@ -2,6 +2,13 @@ const request = require("supertest");
 const jwt = require("jsonwebtoken");
 
 jest.mock("jsonwebtoken");
+jest.mock("jwks-rsa", () => {
+  return jest.fn().mockImplementation(() => {
+    return {
+      getSigningKey: jest.fn(),
+    };
+  });
+});
 
 const app = require("../server");
 
