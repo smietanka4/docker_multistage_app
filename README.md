@@ -1,6 +1,7 @@
 # Event Manage
 
 Autor: Karol Włoczewski
+Nr. grupy: 4
 
 ## Wymagania przed uruchomieniem
 
