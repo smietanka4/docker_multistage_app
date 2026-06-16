@@ -8,7 +8,6 @@ secrets:
   keycloak_db_user:
     file: ./secrets/keycloak_db_user.txt
 
-
 networks:
   frontend_net:
     driver: bridge
@@ -112,7 +111,7 @@ services:
       dockerfile: Dockerfile
     image: my-app-backend:${APP_VERSION:-latest}
     environment:
-      PORT: 3002
+      PORT: ${BACKEND2_PORT}
       DB_HOST: ${DB_HOST}
       DB_PORT: ${DB_PORT}
       DB_NAME: ${DB_NAME}
@@ -212,7 +211,6 @@ services:
       - backend_net
     ports:
       - "5050:80"
-
 
   postgres-keycloak:
     container_name: postgres-keycloak
