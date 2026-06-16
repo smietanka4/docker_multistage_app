@@ -73,6 +73,8 @@ services:
       DB_NAME: ${DB_NAME}
       REDIS_HOST: ${REDIS_HOST}
       REDIS_PORT: ${REDIS_PORT}
+      KEYCLOAK_HOST: ${KEYCLOAK_HOST}
+      KEYCLOAK_REALM: ${KEYCLOAK_REALM}
     secrets:
       - db_user
       - db_password
@@ -116,6 +118,8 @@ services:
       DB_NAME: ${DB_NAME}
       REDIS_HOST: ${REDIS_HOST}
       REDIS_PORT: ${REDIS_PORT}
+      KEYCLOAK_HOST: ${KEYCLOAK_HOST}
+      KEYCLOAK_REALM: ${KEYCLOAK_REALM}
     secrets:
       - db_user
       - db_password
